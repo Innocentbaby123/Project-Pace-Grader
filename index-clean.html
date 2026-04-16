@@ -1,0 +1,947 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Presentation Pace Grader</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: Arial, sans-serif;
+      background: #111;
+      color: #ccc;
+      min-height: 100vh;
+    }
+
+    /* landing */
+    #landingScreen {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      text-align: center;
+      padding: 40px 20px;
+      transition: opacity 0.45s ease, transform 0.45s ease;
+    }
+
+    #landingScreen.fade-out {
+      opacity: 0;
+      transform: scale(0.94);
+      pointer-events: none;
+    }
+
+    #landingScreen h1 {
+      font-size: 2rem;
+      color: #fff;
+      margin-bottom: 16px;
+    }
+
+    #landingScreen p {
+      font-size: 1.1rem;
+      color: #888;
+      max-width: 400px;
+      line-height: 1.6;
+      margin-bottom: 50px;
+    }
+
+    .mic-btn {
+      width: 120px;
+      height: 120px;
+      border-radius: 50%;
+      background: #222;
+      border: 2px solid #444;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+    }
+
+    .mic-btn:hover {
+      background: #2a2a2a;
+      border-color: #666;
+    }
+
+    .mic-btn svg {
+      width: 50px;
+      height: 50px;
+    }
+
+    /* app screen */
+    #appScreen {
+      display: none;
+      opacity: 0;
+      transition: opacity 0.45s ease;
+      padding: 30px 20px;
+    }
+
+    #appScreen.visible {
+      opacity: 1;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    .top-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+
+    .top-bar h2 {
+      font-size: 1.4rem;
+      color: #fff;
+    }
+
+    .rec-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    #stopBtn {
+      background: #c0392b;
+      color: #fff;
+      font-size: 0.95rem;
+      font-weight: bold;
+      padding: 10px 22px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      font-family: Arial, sans-serif;
+    }
+
+    #stopBtn:hover:not(:disabled) { background: #a93226; }
+    #stopBtn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .rec-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #e74c3c;
+      display: none;
+    }
+
+    .rec-dot.active {
+      display: inline-block;
+      animation: blink 1s infinite;
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.1; }
+    }
+
+    #timer {
+      font-size: 1.4rem;
+      font-weight: bold;
+      font-family: 'Courier New', monospace;
+      color: #fff;
+    }
+
+    #statusText {
+      font-size: 0.9rem;
+      color: #777;
+    }
+
+    .card {
+      background: #1e1e1e;
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+
+    .card h3 {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #555;
+      margin-bottom: 14px;
+    }
+
+    .error-box {
+      background: #2a0a0a;
+      border: 1px solid #7f1d1d;
+      border-radius: 8px;
+      padding: 14px;
+      color: #f88;
+      font-size: 0.9rem;
+      display: none;
+      margin-bottom: 16px;
+    }
+
+    .error-box.show { display: block; }
+
+    .finalized-text {
+      max-height: 200px;
+      overflow-y: auto;
+      margin-bottom: 8px;
+    }
+
+    .finalized-text:empty::before {
+      content: 'Waiting for speech...';
+      color: #444;
+      font-style: italic;
+    }
+
+    .transcript-chip {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 8px 10px;
+      border-radius: 6px;
+      margin-bottom: 6px;
+      border: 1px solid;
+      font-size: 0.88rem;
+    }
+
+    .chip-good     { background: #0f1f0f; border-color: #1e4d1e; }
+    .chip-fast     { background: #1f1500; border-color: #4d3700; }
+    .chip-too-fast { background: #1f0a0a; border-color: #4d1a1a; }
+    .chip-too-slow { background: #0a0f1f; border-color: #1a2e4d; }
+
+    .chip-num  { color: #555; font-weight: bold; font-size: 0.75rem; white-space: nowrap; flex-shrink: 0; }
+    .chip-text { flex: 1; color: #bbb; line-height: 1.4; }
+    .chip-wpm  { font-weight: bold; white-space: nowrap; font-size: 0.88rem; flex-shrink: 0; }
+
+    .chip-good .chip-wpm     { color: #4caf50; }
+    .chip-fast .chip-wpm     { color: #ff9800; }
+    .chip-too-fast .chip-wpm { color: #f44336; }
+    .chip-too-slow .chip-wpm { color: #2196f3; }
+
+    #interimText {
+      color: #444;
+      font-style: italic;
+      font-size: 0.88rem;
+      min-height: 20px;
+      padding-top: 4px;
+    }
+
+    #interimText.active { color: #666; }
+
+    .chart-wrap {
+      position: relative;
+      height: 280px;
+    }
+
+    .chart-wrap canvas {
+      position: absolute;
+      inset: 0;
+    }
+
+    .score-row {
+      display: flex;
+      align-items: center;
+      gap: 30px;
+      flex-wrap: wrap;
+    }
+
+    .grade-letter {
+      font-size: 5rem;
+      font-weight: bold;
+      line-height: 1;
+    }
+
+    .grade-A { color: #4caf50; }
+    .grade-B { color: #8bc34a; }
+    .grade-C { color: #ffeb3b; }
+    .grade-D { color: #ff9800; }
+    .grade-F { color: #f44336; }
+
+    .grade-desc {
+      font-size: 0.85rem;
+      color: #666;
+      margin-top: 6px;
+      max-width: 260px;
+      line-height: 1.5;
+    }
+
+    .stats-row {
+      display: flex;
+      gap: 30px;
+      flex-wrap: wrap;
+    }
+
+    .stat-val {
+      font-size: 1.6rem;
+      font-weight: bold;
+      color: #fff;
+    }
+
+    .stat-lbl {
+      font-size: 0.75rem;
+      color: #555;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-top: 2px;
+    }
+
+    .flag-group-label {
+      font-size: 0.8rem;
+      font-weight: bold;
+      color: #555;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 10px;
+      margin-top: 6px;
+    }
+
+    .flag-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .flag-card {
+      border-radius: 8px;
+      padding: 14px;
+      border: 1px solid;
+    }
+
+    .flag-card.too-fast { background: #1f0a0a; border-color: #4d1a1a; }
+    .flag-card.too-slow { background: #0a0f1f; border-color: #1a2e4d; }
+
+    .flag-card-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 8px;
+    }
+
+    .flag-card-num { font-size: 0.78rem; font-weight: bold; }
+    .flag-card.too-fast .flag-card-num { color: #f77; }
+    .flag-card.too-slow .flag-card-num { color: #77f; }
+
+    .flag-card-wpm { font-size: 1rem; font-weight: bold; }
+    .flag-card.too-fast .flag-card-wpm { color: #f44336; }
+    .flag-card.too-slow .flag-card-wpm { color: #2196f3; }
+
+    .flag-card-text {
+      font-size: 0.83rem;
+      color: #666;
+      font-style: italic;
+      margin-bottom: 8px;
+      line-height: 1.4;
+    }
+
+    .flag-card-tip { font-size: 0.82rem; color: #888; }
+
+    .all-good { color: #4caf50; font-size: 0.95rem; padding: 4px 0; }
+
+    .table-wrap { overflow-x: auto; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+    }
+
+    thead tr { border-bottom: 1px solid #333; }
+
+    th {
+      text-align: left;
+      padding: 9px 12px;
+      color: #555;
+      font-weight: bold;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    td {
+      padding: 10px 12px;
+      border-bottom: 1px solid #222;
+      vertical-align: top;
+      line-height: 1.4;
+    }
+
+    tr.row-good     td { background: #0a150a; }
+    tr.row-fast     td { background: #150f00; }
+    tr.row-too-fast td { background: #150707; }
+    tr.row-too-slow td { background: #07090f; }
+
+    td:first-child { color: #555; font-weight: bold; }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: bold;
+    }
+
+    .badge-good     { background: #0f2e0f; color: #4caf50; }
+    .badge-fast     { background: #2e1f00; color: #ff9800; }
+    .badge-too-fast { background: #2e0a0a; color: #f44336; }
+    .badge-too-slow { background: #0a0f2e; color: #2196f3; }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+
+  <div id="landingScreen">
+    <h1>Presentation Pace Grader</h1>
+    <p>Please speak your presentation, we will grade your pace. Click on the mic to start.</p>
+    <button class="mic-btn" id="micBtn" onclick="startRecording()" aria-label="Start recording">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+        <line x1="12" y1="19" x2="12" y2="23"/>
+        <line x1="8"  y1="23" x2="16" y2="23"/>
+      </svg>
+    </button>
+  </div>
+
+  <div id="appScreen">
+    <div class="container">
+
+      <div class="top-bar">
+        <h2>Presentation Pace Grader</h2>
+        <div class="rec-row">
+          <span class="rec-dot" id="recDot"></span>
+          <span id="timer">0:00</span>
+          <button id="stopBtn" onclick="stopRecording()" disabled>Stop and Analyze</button>
+          <span id="statusText"></span>
+        </div>
+      </div>
+
+      <div class="error-box" id="errorBox"></div>
+
+      <div id="liveSection" class="hidden">
+        <div class="card">
+          <h3>Live Transcript</h3>
+          <div class="finalized-text" id="finalizedText"></div>
+          <div id="interimText"></div>
+        </div>
+        <div class="card">
+          <h3>Live Pace Monitor</h3>
+          <div class="chart-wrap">
+            <canvas id="paceChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <div id="resultsSection" class="hidden">
+        <div class="card">
+          <h3>Overall Score</h3>
+          <div class="score-row">
+            <div>
+              <div class="grade-letter" id="gradeEl"></div>
+              <div class="grade-desc" id="gradeDesc"></div>
+            </div>
+            <div class="stats-row">
+              <div>
+                <div class="stat-val" id="avgWpmEl"></div>
+                <div class="stat-lbl">Avg WPM</div>
+              </div>
+              <div>
+                <div class="stat-val" id="sentCountEl"></div>
+                <div class="stat-lbl">Sentences</div>
+              </div>
+              <div>
+                <div class="stat-val" id="goodPctEl"></div>
+                <div class="stat-lbl">In Ideal Zone</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Sentences to Review</h3>
+          <div id="flagContainer"></div>
+        </div>
+
+        <div class="card">
+          <h3>Full Sentence Breakdown</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Sentence</th>
+                  <th>WPM</th>
+                  <th>Rating</th>
+                  <th>Duration</th>
+                </tr>
+              </thead>
+              <tbody id="tableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+<script>
+const IDEAL_MIN = 110;
+const IDEAL_MAX = 150;
+
+const RATE_LABEL = {
+  'too-slow': 'Too Slow',
+  'good': 'Good',
+  'fast': 'Fast',
+  'too-fast': 'Too Fast',
+};
+
+const GRADE_DESC = {
+  A: 'Majority of sentences hit the ideal pace. Excellent delivery.',
+  B: 'Mostly on pace with a few sections slightly off.',
+  C: 'Inconsistent pacing. Several sentences outside the ideal zone.',
+  D: 'Mostly too fast or too slow throughout.',
+  F: 'Pace was rarely in the ideal range. Significant improvement needed.',
+};
+
+const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+let recognition = null;
+let isRecording = false;
+let sentences = [];
+let sentenceStart = null;
+let timerInterval = null;
+let elapsed = 0;
+let chart = null;
+
+function startTimer() {
+  elapsed = 0;
+  tickTimer();
+  timerInterval = setInterval(tickTimer, 1000);
+}
+
+function stopTimer() { clearInterval(timerInterval); }
+
+function tickTimer() {
+  elapsed++;
+  const m = Math.floor(elapsed / 60);
+  const s = elapsed % 60;
+  document.getElementById('timer').textContent = `${m}:${String(s).padStart(2, '0')}`;
+}
+
+function transitionToApp() {
+  const landing = document.getElementById('landingScreen');
+  const app = document.getElementById('appScreen');
+
+  landing.classList.add('fade-out');
+
+  setTimeout(() => {
+    landing.style.display = 'none';
+    app.style.display = 'block';
+    // need two rAF calls so the browser sees display:block before we fade in
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      app.classList.add('visible');
+    }));
+  }, 440);
+}
+
+function startRecording() {
+  if (!SpeechRecognitionAPI) {
+    alert('Web Speech API is not supported in this browser.\nPlease use Google Chrome or Microsoft Edge.');
+    return;
+  }
+
+  sentences = [];
+  sentenceStart = null;
+  document.getElementById('finalizedText').innerHTML = '';
+  document.getElementById('interimText').textContent = '';
+  document.getElementById('interimText').classList.remove('active');
+  document.getElementById('resultsSection').classList.add('hidden');
+  document.getElementById('liveSection').classList.remove('hidden');
+  clearError();
+
+  recognition = new SpeechRecognitionAPI();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.lang = 'en-US';
+  recognition.maxAlternatives = 1;
+
+  recognition.onresult = onResult;
+  recognition.onerror = onSRError;
+  // Chrome cuts off after ~60s of silence, restart seamlessly
+  recognition.onend = () => {
+    if (isRecording) {
+      try { recognition.start(); } catch (_) {}
+    }
+  };
+
+  try {
+    recognition.start();
+  } catch (e) {
+    alert('Could not start speech recognition: ' + e.message);
+    return;
+  }
+
+  isRecording = true;
+  transitionToApp();
+
+  setTimeout(() => {
+    initChart();
+    startTimer();
+    document.getElementById('stopBtn').disabled = false;
+    document.getElementById('recDot').classList.add('active');
+    document.getElementById('statusText').textContent = 'Listening...';
+  }, 200);
+}
+
+function stopRecording() {
+  isRecording = false;
+  if (recognition) {
+    recognition.onend = null;
+    try { recognition.stop(); } catch (_) {}
+  }
+  stopTimer();
+
+  document.getElementById('stopBtn').disabled = false;
+  document.getElementById('recDot').classList.remove('active');
+  document.getElementById('interimText').textContent = '';
+  document.getElementById('interimText').classList.remove('active');
+
+  if (sentences.length > 0) {
+    renderResults(sentences);
+    document.getElementById('resultsSection').classList.remove('hidden');
+    document.getElementById('statusText').textContent =
+      `Analyzed ${sentences.length} sentence${sentences.length !== 1 ? 's' : ''}`;
+  } else {
+    document.getElementById('statusText').textContent = 'No speech detected. Try again.';
+  }
+}
+
+function onResult(event) {
+  for (let i = event.resultIndex; i < event.results.length; i++) {
+    const result = event.results[i];
+    const transcript = result[0].transcript.trim();
+    if (!transcript) continue;
+
+    if (!result.isFinal) {
+      if (sentenceStart === null) sentenceStart = Date.now();
+      const el = document.getElementById('interimText');
+      el.textContent = transcript + '...';
+      el.classList.add('active');
+    } else {
+      const endMs = Date.now();
+      const startMs = sentenceStart ?? (endMs - estimateMs(transcript));
+      const duration = Math.max((endMs - startMs) / 1000, 0.5);
+
+      sentenceStart = null;
+      const el = document.getElementById('interimText');
+      el.textContent = '';
+      el.classList.remove('active');
+
+      processSentence(transcript, duration);
+    }
+  }
+}
+
+function onSRError(event) {
+  if (event.error === 'no-speech' || event.error === 'aborted') return;
+  showError(`Speech recognition error: "${event.error}". Check microphone permissions.`);
+}
+
+// fallback if we somehow missed the sentence start time
+function estimateMs(text) {
+  const wc = text.split(/\s+/).filter(Boolean).length;
+  return (wc / 130) * 60 * 1000;
+}
+
+function processSentence(text, duration) {
+  const words = text.split(/\s+/).filter(Boolean);
+  if (!words.length) return;
+
+  const wpm = Math.round((words.length / duration) * 60);
+  const rating = getRate(wpm);
+  const num = sentences.length + 1;
+
+  const s = { num, text, words, wordCount: words.length, duration, wpm, rating };
+  sentences.push(s);
+
+  addChartPoint(s);
+  addTranscriptChip(s);
+}
+
+function addTranscriptChip(s) {
+  const wrap = document.getElementById('finalizedText');
+  const chip = document.createElement('div');
+  chip.className = `transcript-chip chip-${s.rating}`;
+  chip.innerHTML = `
+    <span class="chip-num">S${s.num}</span>
+    <span class="chip-text">${trunc(s.text, 100)}</span>
+    <span class="chip-wpm">${s.wpm} WPM</span>
+  `;
+  wrap.appendChild(chip);
+  wrap.scrollTop = wrap.scrollHeight;
+}
+
+// chart.js plugin that shades the 110-150 WPM ideal zone
+const idealZonePlugin = {
+  id: 'idealZone',
+  beforeDraw(ch) {
+    const { ctx, chartArea: ca, scales: { y } } = ch;
+    if (!ca) return;
+
+    const top = y.getPixelForValue(IDEAL_MAX);
+    const bot = y.getPixelForValue(IDEAL_MIN);
+    const mid = y.getPixelForValue((IDEAL_MIN + IDEAL_MAX) / 2);
+
+    ctx.save();
+
+    ctx.fillStyle = 'rgba(34,197,94,0.09)';
+    ctx.fillRect(ca.left, top, ca.width, bot - top);
+
+    ctx.strokeStyle = 'rgba(34,197,94,0.45)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([5, 5]);
+    ctx.beginPath(); ctx.moveTo(ca.left, top); ctx.lineTo(ca.right, top); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(ca.left, bot); ctx.lineTo(ca.right, bot); ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.strokeStyle = 'rgba(34,197,94,0.18)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(ca.left, mid); ctx.lineTo(ca.right, mid); ctx.stroke();
+
+    ctx.fillStyle = 'rgba(34,197,94,0.65)';
+    ctx.font = 'bold 11px system-ui, sans-serif';
+    ctx.fillText('Ideal Zone  110-150 WPM', ca.left + 8, top + 14);
+
+    ctx.restore();
+  }
+};
+
+function initChart() {
+  if (chart) chart.destroy();
+
+  const ctx = document.getElementById('paceChart').getContext('2d');
+  chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [{
+        label: 'WPM',
+        data: [],
+        segment: {
+          borderColor: segCtx => {
+            const y0 = segCtx.p0.parsed.y;
+            const y1 = segCtx.p1.parsed.y;
+            const inZone = y0 >= IDEAL_MIN && y0 <= IDEAL_MAX
+                        && y1 >= IDEAL_MIN && y1 <= IDEAL_MAX;
+            return inZone ? 'rgba(34,197,94,0.85)' : 'rgba(239,68,68,0.85)';
+          }
+        },
+        borderWidth: 2.5,
+        tension: 0.45,
+        fill: false,
+        pointBackgroundColor: [],
+        pointBorderColor: [],
+        pointBorderWidth: [],
+        pointRadius: [],
+        pointHoverRadius: [],
+        pointStyle: [],
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 550, easing: 'easeInOutCubic' },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#1a2030',
+          titleColor: '#e2e8f0',
+          bodyColor: '#94a3b8',
+          borderColor: '#252e42',
+          borderWidth: 1,
+          padding: 10,
+          callbacks: {
+            title: items => `Sentence ${sentences[items[0].dataIndex]?.num ?? ''}`,
+            label: item => {
+              const s = sentences[item.dataIndex];
+              if (!s) return `${item.parsed.y} WPM`;
+              return [
+                `${s.wpm} WPM, ${RATE_LABEL[s.rating]}`,
+                `"${trunc(s.text, 65)}"`,
+              ];
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { color: '#1a2236' },
+          ticks: { color: '#4f6080', maxTicksLimit: 20 },
+          title: { display: true, text: 'Sentence', color: '#4f6080', font: { size: 11 } }
+        },
+        y: {
+          grid: { color: '#1a2236' },
+          ticks: { color: '#4f6080' },
+          title: { display: true, text: 'Words per Minute', color: '#4f6080', font: { size: 11 } },
+          suggestedMin: 50,
+          suggestedMax: 230,
+        }
+      }
+    },
+    plugins: [idealZonePlugin]
+  });
+}
+
+function addChartPoint(s) {
+  const inZone = s.wpm >= IDEAL_MIN && s.wpm <= IDEAL_MAX;
+  const outlier = s.rating === 'too-fast' || s.rating === 'too-slow';
+  const color = inZone ? 'rgba(34,197,94,0.9)' : 'rgba(239,68,68,0.9)';
+
+  const ds = chart.data.datasets[0];
+  chart.data.labels.push(`S${s.num}`);
+  ds.data.push(s.wpm);
+  ds.pointBackgroundColor.push(color);
+  ds.pointBorderColor.push(color);
+  ds.pointBorderWidth.push(2);
+  ds.pointRadius.push(outlier ? 9 : 5);
+  ds.pointHoverRadius.push(outlier ? 12 : 8);
+  ds.pointStyle.push(outlier ? 'triangle' : 'circle');
+
+  chart.update();
+}
+
+function calcGrade(sents) {
+  const total = sents.length;
+  const goodCount = sents.filter(s => s.rating === 'good').length;
+  const goodPct = goodCount / total;
+
+  const totalWords = sents.reduce((a, s) => a + s.wordCount, 0);
+  const weightedWpm = sents.reduce((a, s) => a + s.wpm * s.wordCount, 0) / (totalWords || 1);
+
+  let grade;
+  if (goodPct >= 0.60) grade = 'A';
+  else if (goodPct >= 0.42) grade = 'B';
+  else if (goodPct >= 0.24) grade = 'C';
+  else if (goodPct >= 0.08) grade = 'D';
+  else grade = 'F';
+
+  return { grade, avgWpm: Math.round(weightedWpm), goodPct };
+}
+
+function renderResults(sents) {
+  const { grade, avgWpm, goodPct } = calcGrade(sents);
+  const goodPctDisplay = Math.round(goodPct * 100);
+
+  const gradeEl = document.getElementById('gradeEl');
+  gradeEl.textContent = grade;
+  gradeEl.className = `grade-letter grade-${grade}`;
+  document.getElementById('gradeDesc').textContent = GRADE_DESC[grade];
+  document.getElementById('avgWpmEl').textContent = avgWpm;
+  document.getElementById('sentCountEl').textContent = sents.length;
+  document.getElementById('goodPctEl').textContent = goodPctDisplay + '%';
+
+  renderFlags(sents);
+  renderTable(sents);
+}
+
+function renderFlags(sents) {
+  const wrap = document.getElementById('flagContainer');
+  wrap.innerHTML = '';
+
+  const tooFast = sents.filter(s => s.rating === 'too-fast');
+  const tooSlow = sents.filter(s => s.rating === 'too-slow');
+
+  if (!tooFast.length && !tooSlow.length) {
+    wrap.innerHTML = '<p class="all-good">All sentences are within the ideal range. Excellent pacing!</p>';
+    return;
+  }
+
+  if (tooFast.length) {
+    wrap.appendChild(mkLabel('Too Fast'));
+    const grid = mkGrid();
+    tooFast.forEach(s => grid.appendChild(mkCard(s)));
+    wrap.appendChild(grid);
+  }
+  if (tooSlow.length) {
+    wrap.appendChild(mkLabel('Too Slow'));
+    const grid = mkGrid();
+    tooSlow.forEach(s => grid.appendChild(mkCard(s)));
+    wrap.appendChild(grid);
+  }
+}
+
+function mkLabel(txt) {
+  const el = document.createElement('div');
+  el.className = 'flag-group-label';
+  el.textContent = txt;
+  return el;
+}
+
+function mkGrid() {
+  const el = document.createElement('div');
+  el.className = 'flag-grid';
+  return el;
+}
+
+function mkCard(s) {
+  const tip = s.rating === 'too-fast' ? 'Slow down here' : 'Pick up the pace';
+  const icon = s.rating === 'too-fast' ? '🔴' : '🔵';
+  const el = document.createElement('div');
+  el.className = `flag-card ${s.rating}`;
+  el.innerHTML = `
+    <div class="flag-card-top">
+      <span class="flag-card-num">${icon} Sentence ${s.num}</span>
+      <span class="flag-card-wpm">${s.wpm} WPM</span>
+    </div>
+    <div class="flag-card-text">"${trunc(s.text, 95)}"</div>
+    <div class="flag-card-tip">💡 ${tip}</div>
+  `;
+  return el;
+}
+
+function renderTable(sents) {
+  const body = document.getElementById('tableBody');
+  body.innerHTML = '';
+  sents.forEach(s => {
+    const tr = document.createElement('tr');
+    tr.className = `row-${s.rating}`;
+    tr.innerHTML = `
+      <td>${s.num}</td>
+      <td>${trunc(s.text, 120)}</td>
+      <td><strong>${s.wpm}</strong></td>
+      <td><span class="badge badge-${s.rating}">${RATE_LABEL[s.rating]}</span></td>
+      <td>${s.duration.toFixed(1)}s</td>
+    `;
+    body.appendChild(tr);
+  });
+}
+
+function getRate(wpm) {
+  if (wpm < IDEAL_MIN) return 'too-slow';
+  if (wpm <= IDEAL_MAX) return 'good';
+  if (wpm <= 180) return 'fast';
+  return 'too-fast';
+}
+
+function trunc(str, max) {
+  return str.length > max ? str.slice(0, max).trimEnd() + '...' : str;
+}
+
+function showError(msg) {
+  const el = document.getElementById('errorBox');
+  el.textContent = 'Error: ' + msg;
+  el.classList.add('show');
+}
+
+function clearError() {
+  document.getElementById('errorBox').classList.remove('show');
+}
+</script>
+</body>
+</html>
